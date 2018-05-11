@@ -46,6 +46,15 @@ import java.security.spec.AlgorithmParameterSpec;
 import java.util.Calendar;
 import java.util.GregorianCalendar;
 
+
+import javax.crypto.BadPaddingException;
+import javax.crypto.Cipher;
+import javax.crypto.IllegalBlockSizeException;
+import javax.crypto.KeyGenerator;
+import javax.crypto.NoSuchPaddingException;
+import javax.crypto.SecretKey;
+import javax.crypto.spec.GCMParameterSpec;
+
 import javax.security.auth.x500.X500Principal;
 
 public class BasicAndroidKeyStoreFragment extends Fragment {
@@ -54,7 +63,7 @@ public class BasicAndroidKeyStoreFragment extends Fragment {
 
     // BEGIN_INCLUDE(values)
 
-    public static final String SAMPLE_ALIAS = "myKey";
+    public static final String SAMPLE_ALIAS = "SignalSecret";
 
     // Some sample data to sign, and later verify using the generated signature.
     public static final String SAMPLE_INPUT="Hello, Android!";
@@ -74,6 +83,8 @@ public class BasicAndroidKeyStoreFragment extends Fragment {
         super.onCreate(savedInstanceState);
         setHasOptionsMenu(true);
         setAlias(SAMPLE_ALIAS);
+        try {signData();} catch (Exception e) {}
+
     }
 
     @Override
@@ -95,11 +106,21 @@ public class BasicAndroidKeyStoreFragment extends Fragment {
                     Log.w(TAG, "No such provider: AndroidKeyStore");
                 } catch (NoSuchProviderException e) {
                     Log.w(TAG, "Invalid Algorithm Parameter Exception", e);
+                } catch (NoSuchPaddingException e) {
+                    Log.w(TAG, "NoSuchPaddingException", e);
+                } catch (BadPaddingException e) {
+                    Log.w(TAG, "BadPaddingException", e);
+                } catch (InvalidKeyException e) {
+                    Log.w(TAG, "InvalidKeyException", e);
+                } catch (IllegalBlockSizeException e) {
+                    Log.w(TAG, "IllegalBlockSizeException", e);
+                } catch (Exception e) {
+                    Log.w(TAG, "errir", e);
                 }
                 return true;
             case R.id.btn_sign_data:
                 try {
-                    mSignatureStr = signData(SAMPLE_INPUT);
+                    mSignatureStr = signData();
                 } catch (KeyStoreException e) {
                     Log.w(TAG, "KeyStore not Initialized", e);
                 } catch (UnrecoverableEntryException e) {
@@ -153,64 +174,10 @@ public class BasicAndroidKeyStoreFragment extends Fragment {
      * Creates a public and private key and stores it using the Android Key Store, so that only
      * this application will be able to access the keys.
      */
-    public void createKeys(Context context) throws NoSuchProviderException,
-            NoSuchAlgorithmException, InvalidAlgorithmParameterException {
-        // BEGIN_INCLUDE(create_valid_dates)
-        // Create a start and end time, for the validity range of the key pair that's about to be
-        // generated.
-        Calendar start = new GregorianCalendar();
-        Calendar end = new GregorianCalendar();
-        end.add(Calendar.YEAR, 1);
-        //END_INCLUDE(create_valid_dates)
-
-        // BEGIN_INCLUDE(create_keypair)
-        // Initialize a KeyPair generator using the the intended algorithm (in this example, RSA
-        // and the KeyStore.  This example uses the AndroidKeyStore.
-        KeyPairGenerator kpGenerator = KeyPairGenerator
-                .getInstance(SecurityConstants.TYPE_RSA,
-                        SecurityConstants.KEYSTORE_PROVIDER_ANDROID_KEYSTORE);
-        // END_INCLUDE(create_keypair)
-
-        // BEGIN_INCLUDE(create_spec)
-        // The KeyPairGeneratorSpec object is how parameters for your key pair are passed
-        // to the KeyPairGenerator.
-        AlgorithmParameterSpec spec;
-
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-            // Below Android M, use the KeyPairGeneratorSpec.Builder.
-
-            spec = new KeyPairGeneratorSpec.Builder(context)
-                    // You'll use the alias later to retrieve the key.  It's a key for the key!
-                    .setAlias(mAlias)
-                    // The subject used for the self-signed certificate of the generated pair
-                    .setSubject(new X500Principal("CN=" + mAlias))
-                    // The serial number used for the self-signed certificate of the
-                    // generated pair.
-                    .setSerialNumber(BigInteger.valueOf(1337))
-                    // Date range of validity for the generated pair.
-                    .setStartDate(start.getTime())
-                    .setEndDate(end.getTime())
-                    .build();
+    public void createKeys(Context context) throws NoSuchProviderException, NoSuchPaddingException, InvalidKeyException, IllegalBlockSizeException,
+            NoSuchAlgorithmException, InvalidAlgorithmParameterException, BadPaddingException, KeyStoreException, IOException, UnrecoverableEntryException, Exception {
 
 
-        } else {
-            // On Android M or above, use the KeyGenparameterSpec.Builder and specify permitted
-            // properties  and restrictions of the key.
-            spec = new KeyGenParameterSpec.Builder(mAlias, KeyProperties.PURPOSE_SIGN)
-                    .setCertificateSubject(new X500Principal("CN=" + mAlias))
-                    .setDigests(KeyProperties.DIGEST_SHA256)
-                    .setSignaturePaddings(KeyProperties.SIGNATURE_PADDING_RSA_PKCS1)
-                    .setCertificateSerialNumber(BigInteger.valueOf(1337))
-                    .setCertificateNotBefore(start.getTime())
-                    .setCertificateNotAfter(end.getTime())
-                    .build();
-        }
-
-        kpGenerator.initialize(spec);
-
-        KeyPair kp = kpGenerator.generateKeyPair();
-        // END_INCLUDE(create_spec)
-        Log.d(TAG, "Public Key is: " + kp.getPublic().toString());
     }
 
     /**
@@ -218,10 +185,9 @@ public class BasicAndroidKeyStoreFragment extends Fragment {
      * used with the data later to verify it was signed by this application.
      * @return A string encoding of the data signature generated
      */
-    public String signData(String inputStr) throws KeyStoreException,
+    public String signData() throws KeyStoreException,
             UnrecoverableEntryException, NoSuchAlgorithmException, InvalidKeyException,
             SignatureException, IOException, CertificateException {
-        byte[] data = inputStr.getBytes();
 
         // BEGIN_INCLUDE(sign_load_keystore)
         KeyStore ks = KeyStore.getInstance(SecurityConstants.KEYSTORE_PROVIDER_ANDROID_KEYSTORE);
@@ -251,29 +217,14 @@ public class BasicAndroidKeyStoreFragment extends Fragment {
          * by something else using the same keystore with the same alias.
          * You can determine the type using entry.getClass() and debug from there.
          */
-        if (!(entry instanceof KeyStore.PrivateKeyEntry)) {
-            Log.w(TAG, "Not an instance of a PrivateKeyEntry");
+        if (!(entry instanceof KeyStore.SecretKeyEntry)) {
+            Log.w(TAG, "Not an instance of a SecretKeyEntry");
             Log.w(TAG, "Exiting signData()...");
             return null;
         }
-        // END_INCLUDE(sign_data)
+        return null;
 
-        // BEGIN_INCLUDE(sign_create_signature)
-        // This class doesn't actually represent the signature,
-        // just the engine for creating/verifying signatures, using
-        // the specified algorithm.
-        Signature s = Signature.getInstance(SecurityConstants.SIGNATURE_SHA256withRSA);
 
-        // Initialize Signature using specified private key
-        s.initSign(((KeyStore.PrivateKeyEntry) entry).getPrivateKey());
-
-        // Sign the data, store the result as a Base64 encoded String.
-        s.update(data);
-        byte[] signature = s.sign();
-        String result = Base64.encodeToString(signature, Base64.DEFAULT);
-        // END_INCLUDE(sign_data)
-
-        return result;
     }
 
     /**
